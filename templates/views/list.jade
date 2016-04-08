@@ -1,0 +1,428 @@
+extends ../layout/base
+
+include ../mixins/rows
+include ../mixins/pagination
+
+block js
+	script(src='/keystone/js/views/list.js')
+	script(src='/keystone/js/lib/browserified/querystring.js')
+	script(src='/keystone/js/lib/browserified/queryfilter.js')
+	script.
+		Keystone.list = !{JSON.stringify(list.getOptions())};
+		Keystone.wysiwyg = { options: !{JSON.stringify(wysiwygOptions)} };
+		
+		// Support for the POST-based create process
+		Keystone.showCreateForm = !{JSON.stringify(showCreateForm)};
+		Keystone.createFormData = !{JSON.stringify(submitted)};
+		Keystone.createFormErrors = !{JSON.stringify(createErrors || null)};
+		
+		// Legacy data for List view
+		Keystone.list.cols = !{JSON.stringify(colPaths)};
+		Keystone.list.perPage = !{ Number(list.perPage) || 50 };
+		Keystone.items = !{ JSON.stringify(_.omit(items, 'results')) };
+		Keystone.search = '#{search}';
+		Keystone.filters = !{ JSON.stringify(filters) };
+		Keystone.sort = '#{sort.by}';
+		Keystone.query = '#{query}';
+		Keystone.csrf_query = '!{csrf_query}';
+	script(src='/keystone/js/packages.js')
+	script(src='/keystone/js/fields.js')
+	script(src='/keystone/js/list.js')
+			
+block content
+	//- New React View
+	//- ------------------------------
+	div#list-view
+	
+	//-
+	//- List
+	//- ------------------------------
+	
+	- var xFilters = _.size(filters);
+	
+	.page-header.list-header(class=!items.total && !search && !xFilters ? 'empty-list' : '')
+		h1
+			if items.total
+				span.items-total= utils.plural(items.total, '* ' + list.singular, '* ' + list.plural) + ' '
+			else
+				span.items-total No #{list.plural.toLowerCase()} encontrado
+					= search || xFilters ? ' ' : '.'
+
+			.search-sort(style='display:inline-block')
+				if search
+					span.text-muted  buscando 
+					span=search
+					if xFilters
+						span.text-muted  and
+						span= utils.plural(xFilters, ' * other filtro')
+				else if xFilters
+					span.text-muted  buscando 
+					span= utils.plural(xFilters, ' * filtro')
+			
+				//- Sort
+				if items.results.length
+					if sort.by
+						span.text-muted &nbsp;ordenados por&nbsp;
+					else
+						span.text-muted &mdash;
+					span.dropdown.list-sort-dropdown
+						a(href=js, data-toggle='dropdown').dropdown-toggle
+							if sort.label
+								= sort.label.toLowerCase() + ' '
+								if sort.inv
+									|  (descendente)
+							else
+								| ordenar por
+							b.caret
+						ul.dropdown-menu
+							if list.get('sortable')
+								if sort.by == 'sortOrder'
+									li: a(href=link_to({sort: '-sortOrder'}))
+										span(class='fieldicon fieldicon-sort')
+										span Orden mostrado (invertido)
+								else if sort.by == '-sortOrder'
+									li: a(href=link_to({sort: 'sortOrder'}))
+										span(class='fieldicon fieldicon-sort')
+										span Orden mostrado (normal)
+								else
+									li: a(href=link_to({sort: 'sortOrder'}))
+										span(class='fieldicon fieldicon-sort')
+										span Orden mostrado
+							each el in list.uiElements
+								if el.type == 'heading'
+									li.dropdown-header= el.heading
+								else if el.type == 'field'
+									if el.field.type != 'relationship' && !el.field.nosort && !el.field.hidden
+										if sort.field && sort.field.path == el.field.path
+											if sort.inv
+												li: a(href=link_to({ sort: el.field.path }))
+													span(class='fieldicon fieldicon-' + el.field.type)
+													span= el.field.label + ' (ascendente)'
+											else
+												li: a(href=link_to({ sort: '-' + el.field.path }))
+													span(class='fieldicon fieldicon-' + el.field.type)
+													span= el.field.label + ' (descendente)'
+										else
+											li: a(href=link_to({ sort: el.field.path }))
+												span(class='fieldicon fieldicon-' + el.field.type)
+												span= el.field.label
+							if list.tracking
+								li.divider
+									if list.tracking.createdAt
+										if sort.path == 'createdAt'
+											if sort.inv
+												li: a(href=link_to({ sort: list.tracking.createdAt }))
+													span(class='fieldicon fieldicon-date')
+													span Fecha Creado (ascendente)
+											else
+												li: a(href=link_to({ sort: '-' + list.tracking.createdAt }))
+													span(class='fieldicon fieldicon-date')
+													span Fecha Creado (descendente)
+										else
+											li: a(href=link_to({ sort: list.tracking.createdAt }))
+												span(class='fieldicon fieldicon-date')
+												span Fecha creado
+									if list.tracking.updatedAt
+										if sort.path == 'updatedAt'
+											if sort.inv
+												li: a(href=link_to({ sort: list.tracking.updatedAt }))
+													span(class='fieldicon fieldicon-date')
+													span Fecha Modificado (ascendente)
+											else
+												li: a(href=link_to({ sort: '-' + list.tracking.updatedAt }))
+													span(class='fieldicon fieldicon-date')
+													span Fecha Modificado (descendente)
+										else
+											li: a(href=link_to({ sort: list.tracking.updatedAt }))
+												span(class='fieldicon fieldicon-date')
+												span Fecha Modificado
+		
+		
+		//-
+		//- Filters
+		//- ------------------------------
+		form#list-filters
+			
+			//-
+			//- Search Bar
+			//- ------------------------------
+			if items.results.length || search || xFilters
+				.list-toolbar
+					.search-list
+						.form-inline
+							.dropdown-inline.list-filter-dropdown.js-recent-searches.hidden.mr-5
+								button(type='button', data-toggle='dropdown', title='Filtros Recientes').btn.btn-default.dropdown-toggle
+									span.sr-only Filtros Recientes
+									span.ion-clock
+									|  
+									span.caret
+								ul.dropdown-menu
+									li.dropdown-header Filtros Recientes
+							.form-inline.searchbox-form.mr-5
+								.searchbox-field
+									input(type='search', name='search', placeholder='Buscar #{list.plural.toLowerCase()}', value=search).form-control.js-search-list.searchbox-input
+									if search
+										a(href='/keystone/#{list.path}', title='Limpiar busqueda').search-list-clear &times;
+								.searchbox-button: button(type='submit').btn.btn-default.btn-search.searchbox-submit
+									span.visible-xs Ir
+									span.hidden-xs Buscar
+							//- .search-field
+								input(type='text', name='search', placeholder='Buscar ' + list.plural.toLowerCase(), value=search).form-control
+							//- span.search-button: button(type='submit').btn.btn-default.btn-search
+								span.visible-xs Ir
+								span.hidden-xs Buscar
+							.dropdown-inline.list-filter-dropdown
+								button(type='button', data-toggle='dropdown').btn.btn-default.dropdown-toggle
+									| Agregar Filtro 
+									b.caret
+								ul.dropdown-menu: each el in list.uiElements
+									if el.type == 'heading'
+										li.dropdown-header= el.heading
+									else if el.type == 'field' && !el.field.nofilter && !el.field.hidden
+										li: a(href=js, data-path=el.field.path).add-list-filter
+											span(class='fieldicon fieldicon-' + el.field.type)
+											span= el.field.label
+					
+					//- lg screens only
+					//- columns and download aren't relevant when using a mobile device
+					if items.total
+						.pull-right.hidden-xs
+							.pull-right
+								a(href=download_link, data-confirm="Descargar a .csv of #{utils.plural(items.total, '* ' + list.singular, '* ' + list.plural).toLowerCase()}?").btn.btn-default Descargar
+							div(style='margin-right: 10px;').dropdown.list-columns-dropdown.pull-right
+								button(type='button', data-toggle='dropdown').btn.btn-default.dropdown-toggle
+									| Columnas 
+									b.caret
+								ul.dropdown-menu
+									each el in list.uiElements
+										if el.type == 'heading'
+											li.dropdown-header= el.heading
+										else if el.type == 'field' && !el.field.nocol && !el.field.hidden
+											li: a(href=js, data-col=el.field.path).btn-toggle-column
+												span(class=_.contains(colPaths, el.field.path) ? 'ion-checkmark' : '').icon
+												span= el.field.label
+									if list.tracking
+										li.divider
+											if list.tracking.createdAt
+												li: a(href=js, data-col=list.tracking.createdAt).btn-toggle-column
+													span(class=_.contains(colPaths, list.tracking.createdAt) ? 'ion-checkmark' : '').icon
+													span Fecha Creado
+											if list.tracking.updatedAt
+												li: a(href=js, data-col=list.tracking.updatedAt).btn-toggle-column
+													span(class=_.contains(colPaths, list.tracking.updatedAt) ? 'ion-checkmark' : '').icon
+													span Fecha Modificado
+									if query.cols
+										li.divider
+										li: a(href=link_to({ cols: undefined }))
+											span.ion-close.icon
+											span Resetear a valor default
+			
+			
+			//-
+			//- List Filters
+			//- ------------------------------
+			.list-filters
+				each field in list.fields
+					if !field.nofilter && !field.hidden
+						.filter(data-path=field.path, data-type=field.type, class=filters[field.path] ? 'active' : '')
+							.filter-label
+								a(href=js, title='Remover filtro', data-toggle='tooltip', data-placement='right', data-container='body').btn-companion-xs.clear-filter &times;
+								span(class='fieldicon fieldicon-' + field.type)
+								.btn-companion-xs=field.label
+							.filter-options
+								- var ops = filters[field.path] || {}
+								//- Text Fields
+								if field.type == 'text' || field.type == 'textarea' || field.type == 'html' || field.type == 'email' || field.type == 'url' || field.type == 'key'
+									.btn-group.btn-group-xs(data-toggle='buttons')
+										button(type='button', class=!ops.exact ? 'active' : '').btn.btn-default
+											input(type='radio', name='options')
+											| contiene
+										button(type='button', class=ops.exact ? 'active' : '', data-opt='exact', data-value='true').btn.btn-default
+											input(type='radio', name='options')
+											| valor exacto
+									.filter-input.filter-input-md: input(type='text', name='value', value=ops.value).form-control.input-xs
+									button(type='button', data-toggle='button', class=ops.inverse ? 'active' : '', data-opt='inv', data-value='true').btn.btn-xs.btn-default invertir
+								
+								//- Numeric Fields
+								if field.type == 'number' || field.type == 'money'
+									.btn-group.btn-group-operator.btn-group-xs(data-toggle='buttons')
+										button(type='button', class=!ops.operator ? 'active' : '').btn.btn-default
+											input(type='radio', name='options')
+											| exactamente
+										button(type='button', class=ops.operator == 'gt' ? 'active' : '', data-opt='operator', data-value='gt').btn.btn-default
+											input(type='radio', name='options')
+											| mayor que
+										button(type='button', class=ops.operator == 'lt' ? 'active' : '', data-opt='operator', data-value='lt').btn.btn-default
+											input(type='radio', name='options')
+											| menor que
+										button(type='button', class=ops.operator == 'bt' ? 'active' : '', data-opt='operator', data-value='bt').btn.btn-default
+											input(type='radio', name='options')
+											| entre
+								
+									.filter-input
+										.filter-input-range.form-inline.text-sm(style='display:none')
+											input(type='number', value=(ops.operator === 'bt' && ops.value[0])).form-control.input-xs.field-inline--xs.filter-input-range1
+											span.mh-1 y
+											input(type='number', value=(ops.operator === 'bt' && ops.value[1])).form-control.input-xs.field-inline--xs.filter-input-range2
+											span.mh-1 (inclusivo)
+										.filter-input-standard(style='display:none')
+											input(type='number', name='value', value=(ops.operator !== 'bt' && ops.value)).form-control.input-xs
+							
+								//- Date
+								if field.type == 'date' || field.type == 'datetime'
+									.btn-group.btn-group-operator.btn-group-xs(data-toggle='buttons')
+										button(type='button', class=(!ops.operator) ? 'active' : '').btn.btn-default
+											input(type='radio', name='options')
+											| en
+										button(type='button', class=ops.operator == 'gt' ? 'active' : '', data-opt='operator', data-value='gt').btn.btn-default
+											input(type='radio', name='options')
+											| despues
+										button(type='button', class=ops.operator == 'lt' ? 'active' : '', data-opt='operator', data-value='lt').btn.btn-default
+											input(type='radio', name='options')
+											| antes
+										button(type='button', class=ops.operator == 'bt' ? 'active' : '', data-opt='operator', data-value='bt').btn.btn-default
+											input(type='radio', name='options')
+											| entre
+								
+									.filter-input
+										.filter-input-range.form-inline.text-sm(style='display:none')
+											input(type='text', value=(ops.operator === 'bt' && ops.value[0])).form-control.input-xs.field-inline--sm.ui-datepicker.filter-input-range1
+											span.mh-1 y
+											input(type='text', value=(ops.operator === 'bt' && ops.value[1])).form-control.input-xs.field-inline--sm.ui-datepicker.filter-input-range2
+											span.mh-1 (inclusivo)
+										.filter-input-standard(style='display:none')
+											input(type='text', name='value', value=(ops.operator !== 'bt' && ops.value)).form-control.input-xs.ui-datepicker
+								
+								//- Location
+								if field.type == 'location'
+									- ops.value = ops.value || []
+									.filter-input.filter-input-md: input(type='text', name='address', value=ops.value[0], placeholder='Dirección').form-control.input-xs
+									.filter-input.filter-input-sm: input(type='text', name='suburb', value=ops.value[1], placeholder='Colonia').form-control.input-xs
+									.filter-input.filter-input-sm: input(type='text', name='state', value=ops.value[2], placeholder='Estado').form-control.input-xs
+									.filter-input.filter-input-sm: input(type='text', name='postcode', value=ops.value[3], placeholder='Código Postal').form-control.input-xs
+									.filter-input.filter-input-sm: input(type='text', name='country', value=ops.value[4], placeholder='País').form-control.input-xs
+								
+								//- Select
+								if field.type == 'select'
+									.btn-group.btn-group-xs(data-toggle='buttons')
+										button(type='button', class=!ops.inverse ? 'active' : '').btn.btn-default
+											input(type='radio', name='options')
+											| es
+										button(type='button', class=ops.inverse ? 'active' : '', data-opt='inv', data-value='true').btn.btn-default
+											input(type='radio', name='options')
+											| no es
+									.filter-input.filter-input-md: select(name='value')
+										option(value='')
+										each op in field.ops
+											option(value=op.value, selected=ops.value == op.value)= op.label
+								
+								//- Boolean
+								if field.type == 'boolean'
+									.btn-group.btn-group-xs(data-toggle='buttons')
+										button(type='button', class=ops.value !== false && ops.value !== 'false' ? 'active' : '', data-opt='value', data-value='true').btn.btn-default
+											input(type="radio", name="options")
+											| seleccionado
+										button(type='button', class=ops.value === false || ops.value === 'false' ? 'active' : '', data-opt='value', data-value='false').btn.btn-default
+											input(type="radio", name="options")
+											| no seleccionado
+								
+								//- Cloudinary Image
+								if field.type == 'cloudinaryimage'
+									.btn-group.btn-group-xs(data-toggle='buttons')
+										button(type='button', class=ops.value !== false ? 'active' : '', data-opt='value', data-value='true').btn.btn-default
+											input(type="radio", name="options")
+											| tiene imagen
+										button(type='button', class=ops.value === false ? 'active' : '', data-opt='value', data-value='false').btn.btn-default
+											input(type="radio", name="options")
+											| no tiene imagen
+								
+								//- S3 File
+								if field.type == 's3file'
+									.btn-group.btn-group-xs(data-toggle='buttons')
+										button(type='button', class=ops.value !== false ? 'active' : '', data-opt='value', data-value='true').btn.btn-default
+											input(type="radio", name="options")
+											| tiene archivo
+										button(type='button', class=ops.value === false ? 'active' : '', data-opt='value', data-value='false').btn.btn-default
+											input(type="radio", name="options")
+											| no tiene archivo
+
+								//- Local File
+								if field.type == 'localfile'
+									.btn-group.btn-group-xs(data-toggle='buttons')
+										button(type='button', class=ops.value !== false ? 'active' : '', data-opt='value', data-value='true').btn.btn-default
+											input(type="radio", name="options")
+											| tiene archivo
+										button(type='button', class=ops.value === false ? 'active' : '', data-opt='value', data-value='false').btn.btn-default
+											input(type="radio", name="options")
+											| no tiene archivo
+								
+								//- Relationships
+								if field.type == 'relationship'
+									.btn-group.btn-group-xs(data-toggle='buttons')
+										button(type='button', class=ops.inverse ? '' : 'active', data-opt='inv', data-value='false').btn.btn-default
+											input(type="radio", name="options")
+											| unido a
+										button(type='button', class=ops.inverse ? 'active' : '', data-opt='inv', data-value='true').btn.btn-default
+											input(type="radio", name="options")
+											| no unido a
+									input(type='hidden',
+										name=field.path,
+										id='field_' + field.path,
+										value=ops.value,
+										data-ref-path=field.refList.path,
+										data-ref-singular=field.refList.singular,
+										data-ref-plural=field.refList.plural).ui-select2-ref
+								
+				.list-filters-action
+					button(type='submit').btn.btn-default.btn-filter Buscar
+					a(href='/keystone/#{list.path}').btn.btn-link.btn-cancel limpiar filtros
+			
+	if items.results.length
+		//-
+		//- Pagination
+		//- ------------------------------
+		
+		.list-pagination
+			if items.totalPages > 1
+				+pagination(items)
+			else
+				.count Mostrando #{utils.plural(items.total, '* ' + list.singular, '* ' + list.plural)}
+		
+		
+		- var sortable = list.get('sortable') && !list.get('sortContext') && sort.by == 'sortOrder'
+		- var firstColspan = 1;
+		.items-list-wrapper: table(cellpadding=0, cellspacing=0, class=sortable ? 'sortable' : false, data-list-path=list.path).table.items-list
+			if !list.get('nodelete')
+				- firstColspan++;
+				col(width=26)
+			if sortable && !xFilters
+				- firstColspan++;
+				col(width=26)
+			each col in columns
+				col(width=col.width)
+			thead
+				tr
+					each col, i in columns
+						th(colspan=i == 0 && firstColspan > 1 ? firstColspan : false)
+							if col.field && sort.field && sort.field.path == col.field.path
+								if sort.inv
+									a(href=link_to({ sort: col.field.path }), title='Ordenar por ' + col.label + ' (asc)', class='th-sort--desc').th-sort
+										= col.label
+										span.th-sort__icon
+								else
+									a(href=link_to({ sort: '-' + col.field.path }), title='Ordenar por ' + col.label + ' (desc)', class='th-sort--asc').th-sort
+										= col.label
+										span.th-sort__icon
+							else if col.field
+								a(href=link_to({ sort: col.field.path }), title='Ordenar por ' + col.label).th-sort= col.label
+									span.th-sort__icon
+							else
+								= col.label
+			tbody
+				each item in items.results
+					+row(list, colums, item)
+								
+		if items.totalPages > 1
+			.list-pagination
+				+pagination(items)
+	
