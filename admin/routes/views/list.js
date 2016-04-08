@@ -109,7 +109,7 @@ exports = module.exports = function(req, res) {
 				download_link += '?' + downloadParams;
 			}
 
-			var appName = keystone.get('name') || 'Keystone';
+			var appName = keystone.get('name') || 'Quirino Ordaz Coppel';
 
 			keystone.render(req, res, 'list', _.extend(viewLocals, {
 				section: keystone.nav.by.list[req.list.key] || {},
